@@ -1,35 +1,55 @@
-# ── Java / Maven (backend) ──────────────────────────────────────────
-backend/target/
-backend/*.jar
-*.class
+### Build output ###
+target/
+build/
+!**/src/main/**/target/
+!**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
 
-# ── Node / Vite (frontend) ──────────────────────────────────────────
-frontend/node_modules/
-frontend/dist/
-frontend/dist-ssr/
-frontend/.vite/
-*.tsbuildinfo
+### Maven wrapper (keep the jar, ignore the rest) ###
+!.mvn/wrapper/maven-wrapper.jar
 
-# ── Environment / secrets ───────────────────────────────────────────
+### Secrets — NEVER commit these ###
 .env
 .env.*
-!.env.example
+*.env
 
-# ── Docker volumes ───────────────────────────────────────────────────
-docker-compose.override.yml
-
-# ── Logs ─────────────────────────────────────────────────────────────
+### Logs ###
 *.log
+*.log.*
 logs/
-npm-debug.log*
 
-# ── IDE ──────────────────────────────────────────────────────────────
+### IntelliJ IDEA ###
 .idea/
+*.iws
 *.iml
-.vscode/
-*.suo
-*.sw?
+*.ipr
 
-# ── OS ───────────────────────────────────────────────────────────────
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### OS ###
 .DS_Store
 Thumbs.db
+
+### Claude Code ###
+.claude/
+
+### Misc ###
+.kotlin
