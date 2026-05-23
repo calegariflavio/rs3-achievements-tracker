@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api/axiosConfig'
+import { useRecentCharacters } from '../hooks/useRecentCharacters'
 import AttackIcon from '../assets/skills/Attack.png'
 import StrengthIcon from '../assets/skills/Strength.png'
 import DefenceIcon from '../assets/skills/Defence.png'
@@ -240,6 +241,7 @@ export default function PlayerPage() {
   const [questTab, setQuestTab] = useState<QuestTab>('COMPLETED')
   const [questSearch, setQuestSearch] = useState('')
   const [failedIcons, setFailedIcons] = useState<Set<string>>(new Set())
+  const { add } = useRecentCharacters()
   const [pageTab, setPageTab] = useState<PageTab>('overview')
   const [xpGained, setXpGained] = useState<SkillXpGained[] | null>(null)
   const [xpLoading, setXpLoading] = useState(false)
@@ -260,7 +262,7 @@ export default function PlayerPage() {
     setXpError(null)
     api
       .get<PlayerData>(`/api/player/${encodeURIComponent(username)}`)
-      .then((res) => setPlayer(res.data))
+      .then((res) => { setPlayer(res.data); add(res.data.username) })
       .catch((err) => {
         if (err.response?.status === 404) {
           setError(`Player "${username}" was not found.`)
@@ -401,8 +403,11 @@ export default function PlayerPage() {
                     const iconUrl = name ? SKILL_ICON_MAP[name] : undefined
                     const iconFailed = name ? failedIcons.has(name) : true
                     return (
-                      <div
+                      <a
                         key={skill.id}
+                        href={name ? `https://runescape.wiki/w/${name}` : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="bg-stone-900 border border-stone-700 hover:border-amber-700/40 rounded-lg p-2.5 flex flex-col items-center gap-1 transition-colors"
                       >
                         {iconUrl && !iconFailed ? (
@@ -422,7 +427,7 @@ export default function PlayerPage() {
                         </p>
                         <p className="text-stone-400 text-xs truncate w-full text-center">{name}</p>
                         <p className="text-stone-600 text-xs">{formatXP(skill.xp)}</p>
-                      </div>
+                      </a>
                     )
                   })}
                 </div>

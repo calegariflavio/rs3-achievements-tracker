@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useRecentCharacters } from '../hooks/useRecentCharacters'
 
 const FEATURES = [
   {
@@ -19,6 +20,7 @@ const FEATURES = [
 export default function HomePage() {
   const [username, setUsername] = useState('')
   const navigate = useNavigate()
+  const { recent, remove } = useRecentCharacters()
 
   useEffect(() => {
     document.title = 'RS3 Achievement Tracker'
@@ -59,6 +61,32 @@ export default function HomePage() {
             Search
           </button>
         </form>
+
+        {/* Recent characters */}
+        {recent.length > 0 && (
+          <div className="w-full max-w-xl mt-5" data-testid="recent-characters">
+            <p className="text-stone-500 text-xs mb-2 uppercase tracking-wide">Recent</p>
+            <div className="flex flex-wrap gap-2">
+              {recent.map((name) => (
+                <div key={name} className="flex items-center">
+                  <button
+                    onClick={() => navigate(`/player/${encodeURIComponent(name)}`)}
+                    className="bg-stone-800 hover:bg-amber-900/40 text-stone-300 hover:text-amber-300 text-sm px-3 py-1.5 rounded-l-lg border border-stone-700 hover:border-amber-700/50 transition-colors"
+                  >
+                    {name}
+                  </button>
+                  <button
+                    onClick={() => remove(name)}
+                    aria-label={`Remove ${name} from recent`}
+                    className="bg-stone-800 hover:bg-red-900/30 text-stone-600 hover:text-red-400 text-xs px-1.5 py-1.5 rounded-r-lg border border-l-0 border-stone-700 hover:border-red-800/50 transition-colors leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Feature cards */}
