@@ -114,6 +114,7 @@ public class PlayerService {
         List<SkillValue> skills = profile.skillValues != null
                 ? profile.skillValues.stream()
                         .map(s -> new SkillValue(s.id(), s.level(), s.xp() / 10, s.rank()))
+                        .sorted(Comparator.comparingInt(SkillValue::id))
                         .collect(java.util.stream.Collectors.toList())
                 : Collections.emptyList();
 

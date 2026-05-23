@@ -2,6 +2,5 @@
 .github
 .idea
 .claude
-target/
-*.log
+src
 *.md

@@ -378,6 +378,46 @@ class PlayerServiceTest {
         assertThat(result.bossKills().get(0).killCount()).isGreaterThan(0);
     }
 
+    // ── fetchFromApis — skill ordering ───────────────────────────────────────
+
+    @Test
+    void fetchFromApis_skillValuesReturnedOutOfOrder_areSortedById() {
+        String profileWithReversedSkills = """
+                {
+                  "name": "ZombieW",
+                  "combatlevel": 138,
+                  "totalxp": 5000000,
+                  "totalskill": 2595,
+                  "questscomplete": 300,
+                  "questsstarted": 10,
+                  "questsnotstarted": 5,
+                  "rank": "1",
+                  "loggedIn": "false",
+                  "skillvalues": [
+                    {"id": 1, "level": 99, "xp": 1300000000, "rank": 5},
+                    {"id": 0, "level": 80, "xp":  500000000, "rank": 50}
+                  ],
+                  "activities": []
+                }
+                """;
+
+        when(cacheRepository.findByUsernameIgnoreCase("ZombieW")).thenReturn(Optional.empty());
+        when(restTemplate.getForObject(contains("runemetrics/profile"), eq(String.class), anyString()))
+                .thenReturn(profileWithReversedSkills);
+        when(restTemplate.getForObject(contains("runemetrics/quests"), eq(String.class), anyString()))
+                .thenReturn(QUESTS_JSON);
+        when(restTemplate.getForObject(contains("hiscore"), eq(String.class), anyString()))
+                .thenReturn(HISCORES_CSV);
+
+        PlayerProfileResponse result = service.getFullProfile("ZombieW");
+
+        assertThat(result.skills()).hasSize(2);
+        assertThat(result.skills().get(0).id()).isEqualTo(0);
+        assertThat(result.skills().get(1).id()).isEqualTo(1);
+        assertThat(result.skills().get(0).xp()).isEqualTo(50_000_000L);
+        assertThat(result.skills().get(1).xp()).isEqualTo(130_000_000L);
+    }
+
     // ── fetchFromApis — null skillValues and activities ───────────────────────
 
     @Test
