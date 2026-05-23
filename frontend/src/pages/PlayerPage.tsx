@@ -156,8 +156,8 @@ const SKILL_EMOJI_MAP: Record<string, string> = {
 
 const SKILL_ID_MAP: Record<number, string> = {
   0:  'Attack',
-  1:  'Strength',
-  2:  'Defence',
+  1:  'Defence',
+  2:  'Strength',
   3:  'Constitution',
   4:  'Ranged',
   5:  'Prayer',
