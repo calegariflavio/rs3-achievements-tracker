@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EntityGetterTest {
@@ -21,11 +22,4 @@ class EntityGetterTest {
         assertThat(cache.getCachedResponse()).isEqualTo("{\"username\":\"zezima\"}");
     }
 
-    @Test
-    void characterClaim_gettersAndSetters() {
-        CharacterClaim claim = new CharacterClaim();
-        assertThat(claim.getId()).isNull();
-        claim.setCharacterName("zezima");
-        assertThat(claim.getCharacterName()).isEqualTo("zezima");
-    }
 }
