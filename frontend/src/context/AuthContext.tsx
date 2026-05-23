@@ -7,6 +7,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   authReady: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithToken: (token: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
 }
@@ -41,6 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthReady(true)
   }
 
+  async function loginWithToken(newToken: string) {
+    localStorage.setItem('auth_token', newToken)
+    setToken(newToken)
+    const profile = await getMe(newToken)
+    setUser(profile.data)
+    setAuthReady(true)
+  }
+
   function logout() {
     localStorage.removeItem('auth_token')
     setToken(null)
@@ -55,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isAuthenticated: !!token, authReady, login, logout, refreshUser }}
+      value={{ user, token, isAuthenticated: !!token, authReady, login, loginWithToken, logout, refreshUser }}
     >
       {children}
     </AuthContext.Provider>

@@ -22,6 +22,15 @@ public class Account {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
+    private boolean verified = false;
+
+    @Column(name = "verification_token")
+    private String verificationToken;
+
+    @Column(name = "token_expires_at")
+    private LocalDateTime tokenExpiresAt;
+
     public UUID getId() { return id; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
@@ -29,4 +38,10 @@ public class Account {
     public void setPassword(String password) { this.password = password; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public boolean isVerified() { return verified; }
+    public void setVerified(boolean verified) { this.verified = verified; }
+    public String getVerificationToken() { return verificationToken; }
+    public void setVerificationToken(String verificationToken) { this.verificationToken = verificationToken; }
+    public LocalDateTime getTokenExpiresAt() { return tokenExpiresAt; }
+    public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
 }
