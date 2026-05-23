@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
-import api from '../api/axiosConfig'
-import { claimCharacter, getMe } from '../api/authApi'
-import { useAuth } from '../context/AuthContext'
 import { COLLECTOR_GROUPS } from '../data/archaeologyData'
 
 type StatusFilter = 'all' | 'completed' | 'in-progress' | 'not-started'
+
+const STORAGE_KEY = 'rs3_archaeology_collected'
 
 const LEVEL_BRACKETS = [
   { label: '1–50', min: 1, max: 50 },
@@ -16,25 +14,26 @@ const LEVEL_BRACKETS = [
   { label: '111–120', min: 111, max: 120 },
 ]
 
+function loadFromStorage(): Set<string> {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return new Set(saved ? (JSON.parse(saved) as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
 export default function ArchaeologyPage() {
-  const { token, refreshUser } = useAuth()
+  const [collected, setCollected] = useState<Set<string>>(loadFromStorage)
 
-  const [inputUsername, setInputUsername] = useState('')
-  const [loadedUsername, setLoadedUsername] = useState('')
-  const [collected, setCollected] = useState<Set<string>>(new Set())
-  const [isOwner, setIsOwner] = useState(false)
-  const [fetchLoading, setFetchLoading] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [pending, setPending] = useState<Set<string>>(new Set())
-  const [claimLoading, setClaimLoading] = useState(false)
-  const [claimError, setClaimError] = useState<string | null>(null)
-  const [claimedCharacters, setClaimedCharacters] = useState<string[]>([])
-
-  // Filters
   const [search, setSearch] = useState('')
   const [collectorFilter, setCollectorFilter] = useState('')
   const [levelFilter, setLevelFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+
+  useEffect(() => {
+    document.title = 'Archaeology Log | RS3 Tracker'
+  }, [])
 
   const sortedGroups = [...COLLECTOR_GROUPS].sort(
     (a, b) =>
@@ -47,14 +46,11 @@ export default function ArchaeologyPage() {
     0,
   )
 
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
-
   const filtersActive =
     search.trim() !== '' || collectorFilter !== '' || levelFilter !== '' || statusFilter !== 'all'
 
   const activeLevelBracket = LEVEL_BRACKETS.find((b) => b.label === levelFilter)
 
-  // Apply filters and compute visible groups/collections
   const filteredGroups = sortedGroups
     .map((group) => {
       if (collectorFilter && group.name !== collectorFilter) return null
@@ -94,114 +90,14 @@ export default function ArchaeologyPage() {
     setStatusFilter('all')
   }
 
-  useEffect(() => {
-    document.title = 'Archaeology Log | RS3 Tracker'
-  }, [])
-
-  useEffect(() => {
-    if (!token) return
-    getMe(token).then((res) => {
-      setClaimedCharacters((res.data.claimedCharacters ?? []).map((c) => c.toLowerCase()))
-    })
-  }, [token])
-
-  function loadCharacter(name: string) {
-    if (!name) return
-    setFetchLoading(true)
-    setFetchError(null)
-    setClaimError(null)
-    setIsOwner(false)
-    const normalizedUsername = name.toLowerCase()
-
-    const loadArtefacts = api.get<string[]>(
-      `/api/archaeology/${encodeURIComponent(normalizedUsername)}`,
-      { headers: authHeader },
-    )
-    const loadOwnership = token
-      ? getMe(token).then((res) => {
-          const claimed = (res.data.claimedCharacters ?? []).map((c) => c.toLowerCase())
-          setIsOwner(claimed.includes(normalizedUsername))
-        })
-      : Promise.resolve()
-
-    Promise.all([loadArtefacts, loadOwnership])
-      .then(([res]) => {
-        setCollected(new Set(res.data))
-        setLoadedUsername(normalizedUsername)
-      })
-      .catch(() => setFetchError('Failed to load archaeology data. Check the character name.'))
-      .finally(() => setFetchLoading(false))
-  }
-
-  function handleLoad(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    loadCharacter(inputUsername.trim())
-  }
-
-  async function toggleArtefact(
-    artefactName: string,
-    collectionName: string,
-    collectorName: string,
-  ) {
-    if (!loadedUsername || !isOwner || pending.has(artefactName)) return
-    const wasCollected = collected.has(artefactName)
-
-    setPending((prev) => new Set(prev).add(artefactName))
+  function toggleArtefact(artefactName: string) {
     setCollected((prev) => {
       const next = new Set(prev)
-      if (wasCollected) next.delete(artefactName)
+      if (next.has(artefactName)) next.delete(artefactName)
       else next.add(artefactName)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]))
       return next
     })
-
-    try {
-      if (wasCollected) {
-        await api.delete(
-          `/api/archaeology/${encodeURIComponent(loadedUsername)}/artifact`,
-          { data: { artifactName: artefactName }, headers: authHeader },
-        )
-      } else {
-        await api.post(
-          `/api/archaeology/${encodeURIComponent(loadedUsername)}/artifact`,
-          { artifactName: artefactName, collectionName, digSite: collectorName },
-          { headers: authHeader },
-        )
-      }
-    } catch {
-      setCollected((prev) => {
-        const next = new Set(prev)
-        if (wasCollected) next.add(artefactName)
-        else next.delete(artefactName)
-        return next
-      })
-    } finally {
-      setPending((prev) => {
-        const next = new Set(prev)
-        next.delete(artefactName)
-        return next
-      })
-    }
-  }
-
-  async function handleClaim() {
-    if (!loadedUsername || !token) return
-    setClaimLoading(true)
-    setClaimError(null)
-    try {
-      await claimCharacter(loadedUsername, token)
-      const res = await getMe(token)
-      setClaimedCharacters((res.data.claimedCharacters ?? []).map((c) => c.toLowerCase()))
-      await refreshUser()
-      setIsOwner(true)
-    } catch (err) {
-      setClaimError(
-        axios.isAxiosError(err)
-          ? (err.response?.data?.message ?? 'Failed to claim character.')
-          : 'Failed to claim character.',
-      )
-    } finally {
-      setClaimLoading(false)
-    }
   }
 
   const selectClass =
@@ -211,108 +107,25 @@ export default function ArchaeologyPage() {
     <main className="flex-1 bg-stone-950 text-stone-100 px-4 py-8">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-amber-400 mb-1">Archaeology Collection Log</h1>
-          <p className="text-stone-400 text-sm">
-            Track artefacts collected from all RS3 collectors.
-          </p>
-        </div>
-
-        {/* Claimed character chips */}
-        {token && (
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="text-stone-400 text-xs mb-2">Your characters:</p>
-            {claimedCharacters.length === 0 ? (
-              <p className="text-stone-600 text-xs">
-                No characters claimed yet. Load a character below and click "Claim this character".
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {claimedCharacters.map((char) => {
-                  const isActive = loadedUsername === char
-                  return (
-                    <button
-                      key={char}
-                      type="button"
-                      onClick={() => loadCharacter(char)}
-                      className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
-                        isActive
-                          ? 'bg-amber-500 text-stone-950 border-amber-500'
-                          : 'bg-stone-900 text-amber-400 border-amber-700/50 hover:bg-amber-900/30'
-                      }`}
-                    >
-                      {char}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+            <h1 className="text-3xl font-bold text-amber-400 mb-1">Archaeology Collection Log</h1>
+            <p className="text-stone-400 text-sm">
+              Track artefacts collected from all RS3 collectors. Progress is saved in your browser.
+            </p>
           </div>
-        )}
-
-        {/* Username input */}
-        <form onSubmit={handleLoad} className="flex gap-3 max-w-lg">
-          <input
-            type="text"
-            value={inputUsername}
-            onChange={(e) => setInputUsername(e.target.value)}
-            placeholder="Enter character name…"
-            className="flex-1 bg-stone-800 border border-stone-600 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30 rounded-lg px-4 py-2.5 text-stone-100 placeholder-stone-500 text-sm outline-none transition-all"
-          />
-          <button
-            type="submit"
-            disabled={fetchLoading}
-            className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-stone-950 font-bold px-7 py-2.5 rounded-lg transition-colors text-sm"
-          >
-            {fetchLoading ? 'Loading…' : 'Load'}
-          </button>
-        </form>
-
-        {fetchError && <p className="text-red-400 text-sm -mt-4">{fetchError}</p>}
-
-        {/* Collection summary */}
-        {loadedUsername && (
-          <div className="bg-stone-900 border border-amber-900/40 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-stone-500 text-xs mb-0.5">Loaded for</p>
-              <p className="text-amber-400 font-semibold">{loadedUsername}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-stone-500 text-xs mb-0.5">Artefacts collected</p>
-              <p className="text-amber-400 font-semibold">
-                {collected.size}{' '}
-                <span className="text-stone-500 font-normal">/ {totalArtefacts}</span>
-              </p>
-            </div>
+          <div className="bg-stone-900 border border-amber-900/40 rounded-xl px-5 py-3 text-right shrink-0">
+            <p className="text-stone-500 text-xs mb-0.5">Collected</p>
+            <p className="text-amber-400 font-semibold text-lg">
+              {collected.size}{' '}
+              <span className="text-stone-500 font-normal text-sm">/ {totalArtefacts}</span>
+            </p>
           </div>
-        )}
-
-        {/* Ownership banner */}
-        {loadedUsername && !isOwner && (
-          <div className="bg-stone-900 border border-amber-700/30 rounded-xl px-5 py-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-amber-400 text-sm font-medium">🔒 Read-only</p>
-                <p className="text-stone-400 text-xs mt-0.5">
-                  This character is not linked to your account. Claim it to track artefacts.
-                </p>
-              </div>
-              <button
-                onClick={handleClaim}
-                disabled={claimLoading}
-                className="shrink-0 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-stone-950 font-bold px-4 py-2 rounded-lg text-xs transition-colors"
-              >
-                {claimLoading ? 'Claiming…' : 'Claim this character'}
-              </button>
-            </div>
-            {claimError && <p className="text-red-400 text-xs mt-2">{claimError}</p>}
-          </div>
-        )}
+        </div>
 
         {/* Filter bar */}
         <div className="bg-stone-900 border border-stone-700 rounded-xl p-4 space-y-3">
           <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
-            {/* Search */}
             <input
               type="text"
               value={search}
@@ -321,7 +134,6 @@ export default function ArchaeologyPage() {
               className="w-full md:flex-1 md:min-w-40 bg-stone-800 border border-stone-600 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 rounded-lg px-3 py-2.5 text-stone-100 placeholder-stone-500 text-sm outline-none transition-all min-h-[44px]"
             />
 
-            {/* Collector */}
             <select
               value={collectorFilter}
               onChange={(e) => setCollectorFilter(e.target.value)}
@@ -333,7 +145,6 @@ export default function ArchaeologyPage() {
               ))}
             </select>
 
-            {/* Level range */}
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
@@ -345,7 +156,6 @@ export default function ArchaeologyPage() {
               ))}
             </select>
 
-            {/* Status */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -357,7 +167,6 @@ export default function ArchaeologyPage() {
               <option value="not-started">Not Started</option>
             </select>
 
-            {/* Clear */}
             {filtersActive && (
               <button
                 type="button"
@@ -419,7 +228,6 @@ export default function ArchaeologyPage() {
                   ).length
                   const colComplete = colCollected === colTotal
 
-                  // When searching, only render matching artefacts
                   const visibleArtefacts =
                     search.trim()
                       ? collection.artefacts.filter((a) =>
@@ -458,9 +266,6 @@ export default function ArchaeologyPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         {visibleArtefacts.map((artefact) => {
                           const isCollected = collected.has(artefact.name)
-                          const isPending = pending.has(artefact.name)
-                          const editable = loadedUsername && isOwner && !isPending
-                          const isDisabled = !editable
 
                           return (
                             <div
@@ -471,18 +276,11 @@ export default function ArchaeologyPage() {
                                   : 'bg-stone-800 border-stone-700'
                               }`}
                             >
-                              <label
-                                className={`flex items-center gap-2 flex-1 min-w-0 ${
-                                  isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-                                }`}
-                              >
+                              <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
                                 <input
                                   type="checkbox"
                                   checked={isCollected}
-                                  disabled={isDisabled}
-                                  onChange={() =>
-                                    toggleArtefact(artefact.name, collection.name, group.name)
-                                  }
+                                  onChange={() => toggleArtefact(artefact.name)}
                                   className="accent-amber-500 w-4 h-4 shrink-0"
                                 />
                                 <span
@@ -494,11 +292,8 @@ export default function ArchaeologyPage() {
                                 </span>
                               </label>
                               <div className="flex items-center gap-1 shrink-0">
-                                {isCollected && isOwner && (
+                                {isCollected && (
                                   <span className="text-green-400 text-xs">✓</span>
-                                )}
-                                {!isOwner && loadedUsername && (
-                                  <span className="text-stone-600 text-xs">🔒</span>
                                 )}
                                 <a
                                   href={artefact.wikiUrl}
