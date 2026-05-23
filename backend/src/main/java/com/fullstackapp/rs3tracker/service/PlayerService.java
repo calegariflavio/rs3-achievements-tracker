@@ -4,23 +4,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fullstackapp.rs3tracker.dto.*;
 import com.fullstackapp.rs3tracker.entity.CharacterCache;
+import com.fullstackapp.rs3tracker.entity.XpSnapshot;
 import com.fullstackapp.rs3tracker.exception.ExternalApiException;
 import com.fullstackapp.rs3tracker.repository.CharacterCacheRepository;
+import com.fullstackapp.rs3tracker.repository.XpSnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,16 +32,12 @@ public class PlayerService {
             "Divination", "Invention", "Archaeology", "Necromancy"
     };
 
-    private static final Executor XP_FETCH_EXECUTOR = Executors.newFixedThreadPool(29);
-
     private static final String PROFILE_URL =
             "https://apps.runescape.com/runemetrics/profile/profile?user={username}&activities=20";
     private static final String QUESTS_URL =
             "https://apps.runescape.com/runemetrics/quests?user={username}";
     private static final String HISCORES_URL =
             "https://secure.runescape.com/m=hiscore/index_lite.ws?player={username}";
-    private static final String XP_MONTHLY_URL =
-            "https://apps.runescape.com/runemetrics/xp-monthly?user={username}&skillid={skillId}";
 
     // Hiscores CSV: row 0 = Overall, rows 1-29 = skills, rows 30+ = activities/bosses.
     private static final String[] BOSS_NAMES = {
@@ -69,13 +60,16 @@ public class PlayerService {
 
     private final RestTemplate restTemplate;
     private final CharacterCacheRepository cacheRepository;
+    private final XpSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
 
     public PlayerService(RestTemplate restTemplate,
                          CharacterCacheRepository cacheRepository,
+                         XpSnapshotRepository snapshotRepository,
                          ObjectMapper objectMapper) {
         this.restTemplate = restTemplate;
         this.cacheRepository = cacheRepository;
+        this.snapshotRepository = snapshotRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -94,6 +88,7 @@ public class PlayerService {
 
         PlayerProfileResponse profile = fetchFromApis(username);
         saveCache(username, profile, cached);
+        saveXpSnapshots(username, profile.skills());
         return profile;
     }
 
@@ -208,48 +203,59 @@ public class PlayerService {
         return bossKills;
     }
 
-    public List<SkillXpGained> getXpGained(String username) {
-        List<CompletableFuture<SkillXpGained>> futures = new ArrayList<>();
-        for (int id = 0; id < SKILL_NAMES.length; id++) {
-            final int skillId = id;
-            futures.add(CompletableFuture.supplyAsync(
-                    () -> fetchSkillXpGained(username, skillId), XP_FETCH_EXECUTOR));
+    public List<SkillXpGained> getXpGained(String username, int days) {
+        int clampedDays = Math.max(1, Math.min(days, 365));
+        LocalDateTime since = LocalDateTime.now().minusDays(clampedDays);
+
+        List<XpSnapshot> snapshots = snapshotRepository
+                .findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(username, since);
+
+        if (snapshots.isEmpty()) return Collections.emptyList();
+
+        // Group by skillId → sort dates → pick max XP per day
+        Map<Integer, TreeMap<LocalDate, Long>> bySkill = new LinkedHashMap<>();
+        for (XpSnapshot s : snapshots) {
+            bySkill.computeIfAbsent(s.getSkillId(), k -> new TreeMap<>())
+                   .merge(s.getRecordedAt().toLocalDate(), s.getXp(), Math::max);
         }
-        return futures.stream()
-                .map(CompletableFuture::join)
-                .filter(Objects::nonNull)
-                .sorted(Comparator.comparingLong(SkillXpGained::totalXp).reversed())
-                .collect(Collectors.toList());
+
+        List<SkillXpGained> result = new ArrayList<>();
+        for (Map.Entry<Integer, TreeMap<LocalDate, Long>> entry : bySkill.entrySet()) {
+            int skillId = entry.getKey();
+            if (skillId < 0 || skillId >= SKILL_NAMES.length) continue;
+
+            TreeMap<LocalDate, Long> dailyXp = entry.getValue();
+            if (dailyXp.size() < 2) continue; // need at least 2 days to compute a gain
+
+            List<XpDataPoint> dataPoints = dailyXp.entrySet().stream()
+                    .map(e -> new XpDataPoint(e.getKey().toString(), e.getValue()))
+                    .collect(Collectors.toList());
+
+            long gained = Math.max(0, dailyXp.lastEntry().getValue() - dailyXp.firstEntry().getValue());
+            if (gained == 0) continue;
+
+            result.add(new SkillXpGained(skillId, SKILL_NAMES[skillId], dataPoints, gained));
+        }
+
+        result.sort(Comparator.comparingLong(SkillXpGained::xpGained).reversed());
+        return result;
     }
 
-    private SkillXpGained fetchSkillXpGained(String username, int skillId) {
+    private void saveXpSnapshots(String username, List<SkillValue> skills) {
+        if (skills == null || skills.isEmpty()) return;
         try {
-            String body = restTemplate.getForObject(XP_MONTHLY_URL, String.class, username, skillId);
-            if (body == null || body.isBlank()) return null;
-            JsonNode root = objectMapper.readTree(body);
-            if (root.has("error")) return null;
-
-            List<MonthlyXpPoint> monthly = new ArrayList<>();
-            JsonNode monthArray = root.path("month");
-            if (monthArray.isArray()) {
-                for (JsonNode node : monthArray) {
-                    int dateInt = node.path("date").asInt(0);
-                    long xp = node.path("xp").asLong(0);
-                    String dateStr = String.valueOf(dateInt);
-                    String month = dateStr.length() >= 6 ? dateStr.substring(0, 6) : dateStr;
-                    monthly.add(new MonthlyXpPoint(month, xp));
-                }
+            Optional<XpSnapshot> latest = snapshotRepository
+                    .findFirstByUsernameIgnoreCaseOrderByRecordedAtDesc(username);
+            if (latest.isPresent() && latest.get().getRecordedAt().isAfter(LocalDateTime.now().minusHours(1))) {
+                return;
             }
-
-            monthly.sort(Comparator.comparing(MonthlyXpPoint::month));
-            List<MonthlyXpPoint> last12 = monthly.size() > 12
-                    ? new ArrayList<>(monthly.subList(monthly.size() - 12, monthly.size()))
-                    : new ArrayList<>(monthly);
-            long total = last12.stream().mapToLong(MonthlyXpPoint::xpGain).sum();
-            if (total == 0) return null;
-            return new SkillXpGained(skillId, SKILL_NAMES[skillId], last12, total);
+            LocalDateTime now = LocalDateTime.now();
+            List<XpSnapshot> snapshots = skills.stream()
+                    .map(s -> new XpSnapshot(username.toLowerCase(), s.id(), s.xp(), now))
+                    .collect(Collectors.toList());
+            snapshotRepository.saveAll(snapshots);
         } catch (Exception ignored) {
-            return null;
+            // snapshot write failure is non-fatal
         }
     }
 

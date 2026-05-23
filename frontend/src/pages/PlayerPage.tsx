@@ -50,16 +50,16 @@ interface Quest {
   questPoints?: number
 }
 
-interface MonthlyXpPoint {
-  month: string
-  xpGain: number
+interface XpDataPoint {
+  date: string  // "YYYY-MM-DD"
+  xp: number    // cumulative XP at this snapshot
 }
 
 interface SkillXpGained {
   skillId: number
   skillName: string
-  monthly: MonthlyXpPoint[]
-  totalXp: number
+  dataPoints: XpDataPoint[]
+  xpGained: number
 }
 
 interface PlayerData {
@@ -80,14 +80,6 @@ function skillLevelClass(level: number): string {
 
 function formatXP(xp: number): string {
   return xp.toLocaleString()
-}
-
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-function formatMonth(ym: string): string {
-  const y = ym.slice(0, 4)
-  const m = parseInt(ym.slice(4, 6), 10) - 1
-  return `${MONTH_NAMES[m] ?? ym} ${y}`
 }
 
 const SKILL_ICON_MAP: Record<string, string> = {
@@ -252,6 +244,8 @@ export default function PlayerPage() {
   const [xpGained, setXpGained] = useState<SkillXpGained[] | null>(null)
   const [xpLoading, setXpLoading] = useState(false)
   const [xpError, setXpError] = useState<string | null>(null)
+  const [xpDays, setXpDays] = useState(30)
+  const [xpSkillFilter, setXpSkillFilter] = useState('')
 
   useEffect(() => {
     document.title = username ? `${username} | RS3 Tracker` : 'RS3 Tracker'
@@ -280,15 +274,19 @@ export default function PlayerPage() {
   }, [username])
 
   useEffect(() => {
+    setXpGained(null)
+  }, [xpDays])
+
+  useEffect(() => {
     if (pageTab !== 'xp-gained' || xpGained !== null || !username) return
     setXpLoading(true)
     setXpError(null)
     api
-      .get<SkillXpGained[]>(`/api/player/${encodeURIComponent(username)}/xp-gained`)
+      .get<SkillXpGained[]>(`/api/player/${encodeURIComponent(username)}/xp-gained?days=${xpDays}`)
       .then((res) => setXpGained(res.data))
       .catch(() => setXpError('Failed to load XP data.'))
       .finally(() => setXpLoading(false))
-  }, [pageTab, username, xpGained])
+  }, [pageTab, username, xpGained, xpDays])
 
   if (loading) {
     return (
@@ -457,9 +455,26 @@ export default function PlayerPage() {
         {/* XP Gained tab */}
         {pageTab === 'xp-gained' && (
           <section>
-            <h2 className="text-xl font-semibold text-amber-400 mb-4 pb-2 border-b border-stone-700">
-              XP Gained — Last 12 Months
-            </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 pb-3 border-b border-stone-700">
+              <h2 className="text-xl font-semibold text-amber-400 flex-1">XP Gained</h2>
+              {/* Period filter */}
+              <div className="flex gap-1">
+                {([7, 30, 90, 365] as const).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setXpDays(d)}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                      xpDays === d
+                        ? 'bg-amber-600 text-stone-950'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    {d === 365 ? '1y' : `${d}d`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {xpLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-10 h-10 border-4 border-stone-700 border-t-amber-500 rounded-full animate-spin" />
@@ -468,48 +483,87 @@ export default function PlayerPage() {
               <p className="text-red-400 text-sm text-center py-8">{xpError}</p>
             ) : xpGained && xpGained.length > 0 ? (
               <div className="space-y-2">
-                {xpGained.map((skill) => {
-                  const iconUrl = SKILL_ICON_MAP[skill.skillName]
-                  const emoji = SKILL_EMOJI_MAP[skill.skillName]
-                  const iconFailed = failedIcons.has(skill.skillName)
-                  const max = Math.max(...skill.monthly.map((m) => m.xpGain), 1)
-                  return (
-                    <div
-                      key={skill.skillId}
-                      className="bg-stone-900 border border-stone-700 hover:border-amber-700/40 rounded-lg px-4 py-3 flex items-center gap-4 transition-colors"
-                    >
-                      <div className="flex items-center gap-2 w-28 shrink-0">
-                        {iconUrl && !iconFailed ? (
-                          <img
-                            src={iconUrl}
-                            alt={skill.skillName}
-                            className="w-5 h-5 shrink-0"
-                            onError={() => setFailedIcons((prev) => new Set(prev).add(skill.skillName))}
-                          />
-                        ) : emoji ? (
-                          <span className="text-base leading-none shrink-0" aria-hidden="true">{emoji}</span>
-                        ) : null}
-                        <span className="text-stone-200 text-sm truncate">{skill.skillName}</span>
-                      </div>
-                      <div className="flex-1 flex items-end gap-px h-8 min-w-0">
-                        {skill.monthly.map((m) => (
-                          <div
-                            key={m.month}
-                            className="flex-1 bg-amber-600/50 hover:bg-amber-500/80 rounded-sm transition-colors"
-                            style={{ height: `${Math.max((m.xpGain / max) * 100, m.xpGain > 0 ? 4 : 0)}%` }}
-                            title={`${formatMonth(m.month)}: ${m.xpGain.toLocaleString()} XP`}
-                          />
-                        ))}
-                      </div>
-                      <div className="text-amber-400 font-bold text-sm w-28 text-right shrink-0">
-                        {skill.totalXp.toLocaleString()}
-                      </div>
-                    </div>
+                {/* Skill search filter */}
+                <input
+                  type="text"
+                  value={xpSkillFilter}
+                  onChange={(e) => setXpSkillFilter(e.target.value)}
+                  placeholder="Filter skills…"
+                  className="w-full bg-stone-800 border border-stone-600 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 rounded-lg px-4 py-2 text-stone-100 placeholder-stone-500 text-sm outline-none transition-colors mb-1"
+                />
+                {/* Column headers */}
+                <div className="flex items-center gap-4 px-4 pb-1 text-xs text-stone-500">
+                  <div className="w-28 shrink-0">Skill</div>
+                  <div className="flex-1 text-center">XP over period</div>
+                  <div className="w-32 text-right shrink-0">Total gained</div>
+                </div>
+                {xpGained
+                  .filter((s) =>
+                    xpSkillFilter === '' ||
+                    s.skillName.toLowerCase().includes(xpSkillFilter.toLowerCase())
                   )
-                })}
+                  .map((skill) => {
+                    const iconUrl = SKILL_ICON_MAP[skill.skillName]
+                    const emoji = SKILL_EMOJI_MAP[skill.skillName]
+                    const iconFailed = failedIcons.has(skill.skillName)
+                    // Compute per-interval XP gains from consecutive snapshot dataPoints
+                    const deltas = skill.dataPoints.length >= 2
+                      ? skill.dataPoints.slice(1).map((dp, i) => ({
+                          date: dp.date,
+                          gain: Math.max(0, dp.xp - skill.dataPoints[i].xp),
+                        }))
+                      : []
+                    const maxGain = Math.max(...deltas.map((d) => d.gain), 1)
+                    return (
+                      <div
+                        key={skill.skillId}
+                        className="bg-stone-900 border border-stone-700 hover:border-amber-700/40 rounded-lg px-4 py-3 flex items-center gap-4 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 w-28 shrink-0">
+                          {iconUrl && !iconFailed ? (
+                            <img
+                              src={iconUrl}
+                              alt={skill.skillName}
+                              className="w-5 h-5 shrink-0"
+                              onError={() => setFailedIcons((prev) => new Set(prev).add(skill.skillName))}
+                            />
+                          ) : emoji ? (
+                            <span className="text-base leading-none shrink-0" aria-hidden="true">{emoji}</span>
+                          ) : null}
+                          <span className="text-stone-200 text-sm truncate">{skill.skillName}</span>
+                        </div>
+                        <div className="flex-1 flex flex-col min-w-0">
+                          <div className="flex items-end gap-px h-8">
+                            {deltas.map((d) => (
+                              <div
+                                key={d.date}
+                                className="flex-1 bg-amber-600/50 hover:bg-amber-500/80 rounded-sm transition-colors min-w-[2px]"
+                                style={{ height: `${Math.max((d.gain / maxGain) * 100, d.gain > 0 ? 4 : 0)}%` }}
+                                title={`${d.date}: +${d.gain.toLocaleString()} XP`}
+                              />
+                            ))}
+                          </div>
+                          {deltas.length > 0 && (
+                            <div className="flex justify-between mt-0.5 text-stone-600 text-[9px]">
+                              <span>{skill.dataPoints[0].date}</span>
+                              <span>{skill.dataPoints[skill.dataPoints.length - 1].date}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-amber-400 font-bold text-sm w-32 text-right shrink-0">
+                          +{skill.xpGained.toLocaleString()}
+                        </div>
+                      </div>
+                    )
+                  })}
               </div>
             ) : xpGained !== null ? (
-              <p className="text-stone-500 text-sm text-center py-8">No XP gain data available.</p>
+              <div className="text-center py-10 space-y-2">
+                <p className="text-stone-400 text-sm">No XP gains recorded for the last {xpDays} day{xpDays !== 1 ? 's' : ''}.</p>
+                <p className="text-stone-600 text-xs">
+                  Tracking started when this player was first looked up. Check back after another session.
+                </p>
+              </div>
             ) : null}
           </section>
         )}
