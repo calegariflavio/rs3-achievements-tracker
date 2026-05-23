@@ -471,10 +471,10 @@ class PlayerServiceTest {
     @Test
     void getXpGained_withOnlyOneDay_returnsEmpty() {
         // Two snapshots on the same calendar day → 1 distinct date → cannot compute gain
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime noon = LocalDateTime.now().withHour(12).withMinute(0).withSecond(0).withNano(0);
         List<XpSnapshot> snaps = List.of(
-                new XpSnapshot("zezima", 0, 10_000_000L, now.minusHours(3)),
-                new XpSnapshot("zezima", 0, 10_500_000L, now.minusHours(1))
+                new XpSnapshot("zezima", 0, 10_000_000L, noon.minusHours(3)),
+                new XpSnapshot("zezima", 0, 10_500_000L, noon.minusHours(1))
         );
         when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
                 anyString(), any())).thenReturn(snaps);
