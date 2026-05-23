@@ -82,13 +82,23 @@ class PlayerControllerTest {
 
     @Test
     void getXpGained_returnsXpGainedList() throws Exception {
-        List<MonthlyXpPoint> monthly = List.of(new MonthlyXpPoint("202401", 500_000L));
-        List<SkillXpGained> xp = List.of(new SkillXpGained(0, "Attack", monthly, 500_000L));
-        when(playerService.getXpGained("Zezima")).thenReturn(xp);
+        List<XpDataPoint> dataPoints = List.of(
+                new XpDataPoint("2024-01-01", 10_000_000L),
+                new XpDataPoint("2024-01-15", 10_500_000L));
+        List<SkillXpGained> xp = List.of(new SkillXpGained(0, "Attack", dataPoints, 500_000L));
+        when(playerService.getXpGained("Zezima", 30)).thenReturn(xp);
 
         mockMvc.perform(get("/api/player/Zezima/xp-gained"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].skillName").value("Attack"))
-                .andExpect(jsonPath("$[0].totalXp").value(500000));
+                .andExpect(jsonPath("$[0].xpGained").value(500_000));
+    }
+
+    @Test
+    void getXpGained_withDaysParam_passesItToService() throws Exception {
+        when(playerService.getXpGained("Zezima", 7)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/player/Zezima/xp-gained?days=7"))
+                .andExpect(status().isOk());
     }
 }

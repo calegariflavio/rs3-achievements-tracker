@@ -10,8 +10,15 @@ export interface UserProfile {
   claimedCharacters?: string[]
 }
 
+export interface RegisterResponse {
+  message: string
+}
+
 export const register = (email: string, password: string) =>
-  api.post<AuthResponse>('/api/auth/register', { email, password })
+  api.post<RegisterResponse>('/api/auth/register', { email, password })
+
+export const verifyEmail = (token: string) =>
+  api.get<AuthResponse>('/api/auth/verify', { params: { token } })
 
 export const login = (email: string, password: string) =>
   api.post<AuthResponse>('/api/auth/login', { email, password })

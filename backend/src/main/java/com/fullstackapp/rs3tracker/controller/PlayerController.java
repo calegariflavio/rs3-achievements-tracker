@@ -36,7 +36,9 @@ public class PlayerController {
     }
 
     @GetMapping("/{username}/xp-gained")
-    public ResponseEntity<List<SkillXpGained>> getXpGained(@PathVariable String username) {
-        return ResponseEntity.ok(playerService.getXpGained(username));
+    public ResponseEntity<List<SkillXpGained>> getXpGained(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(playerService.getXpGained(username, days));
     }
 }

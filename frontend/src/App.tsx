@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 import PlayerPage from './pages/PlayerPage'
 import ArchaeologyPage from './pages/ArchaeologyPage'
 import NotFoundPage from './pages/NotFoundPage'
+import VerifyPage from './pages/VerifyPage'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/verify" element={<VerifyPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           <Footer />

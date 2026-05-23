@@ -9,6 +9,7 @@ import com.fullstackapp.rs3tracker.repository.CharacterClaimRepository;
 import com.fullstackapp.rs3tracker.security.JwtAuthFilter;
 import com.fullstackapp.rs3tracker.security.JwtUtil;
 import com.fullstackapp.rs3tracker.service.CharacterOwnershipService;
+import com.fullstackapp.rs3tracker.service.EmailService;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,8 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -62,6 +62,9 @@ class AuthControllerTest {
     @MockBean
     private JwtUtil jwtUtil;
 
+    @MockBean
+    private EmailService emailService;
+
     @BeforeEach
     void setupFilter() throws Exception {
         doAnswer(inv -> {
@@ -74,17 +77,28 @@ class AuthControllerTest {
     // ── register ──────────────────────────────────────────────────────────────
 
     @Test
-    void register_newEmail_returns201WithToken() throws Exception {
+    void register_newEmail_returns202WithMessage() throws Exception {
         when(accountRepository.existsByEmail("user@test.com")).thenReturn(false);
         when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(jwtUtil.generateToken("user@test.com")).thenReturn("jwt-token");
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"user@test.com\",\"password\":\"password123\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.token").value("jwt-token"))
-                .andExpect(jsonPath("$.email").value("user@test.com"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").exists());
+    }
+
+    @Test
+    void register_newEmail_sendsVerificationEmail() throws Exception {
+        when(accountRepository.existsByEmail("user@test.com")).thenReturn(false);
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@test.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isAccepted());
+
+        verify(emailService).sendVerificationEmail(eq("user@test.com"), any());
     }
 
     @Test
@@ -113,6 +127,62 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ── verify ────────────────────────────────────────────────────────────────
+
+    @Test
+    void verify_validToken_returns200WithToken() throws Exception {
+        Account account = new Account();
+        account.setEmail("user@test.com");
+        account.setVerified(false);
+        account.setVerificationToken("abc123");
+        account.setTokenExpiresAt(LocalDateTime.now().plusHours(1));
+
+        when(accountRepository.findByVerificationToken("abc123")).thenReturn(Optional.of(account));
+        when(accountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtUtil.generateToken("user@test.com")).thenReturn("jwt-token");
+
+        mockMvc.perform(get("/api/auth/verify").param("token", "abc123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("jwt-token"))
+                .andExpect(jsonPath("$.email").value("user@test.com"));
+    }
+
+    @Test
+    void verify_unknownToken_returns400() throws Exception {
+        when(accountRepository.findByVerificationToken("bad-token")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/auth/verify").param("token", "bad-token"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void verify_expiredToken_returns400() throws Exception {
+        Account account = new Account();
+        account.setEmail("user@test.com");
+        account.setVerified(false);
+        account.setVerificationToken("old-token");
+        account.setTokenExpiresAt(LocalDateTime.now().minusHours(1));
+
+        when(accountRepository.findByVerificationToken("old-token")).thenReturn(Optional.of(account));
+
+        mockMvc.perform(get("/api/auth/verify").param("token", "old-token"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void verify_alreadyVerifiedAccount_returns400() throws Exception {
+        Account account = new Account();
+        account.setEmail("user@test.com");
+        account.setVerified(true);
+        account.setVerificationToken("used-token");
+        account.setTokenExpiresAt(LocalDateTime.now().plusHours(1));
+
+        when(accountRepository.findByVerificationToken("used-token")).thenReturn(Optional.of(account));
+
+        mockMvc.perform(get("/api/auth/verify").param("token", "used-token"))
+                .andExpect(status().isBadRequest());
+    }
+
     // ── login ─────────────────────────────────────────────────────────────────
 
     @Test
@@ -120,6 +190,7 @@ class AuthControllerTest {
         Account account = new Account();
         account.setEmail("user@test.com");
         account.setPassword(passwordEncoder.encode("password123"));
+        account.setVerified(true);
 
         when(accountRepository.findByEmail("user@test.com")).thenReturn(Optional.of(account));
         when(jwtUtil.generateToken("user@test.com")).thenReturn("jwt-token");
@@ -129,6 +200,21 @@ class AuthControllerTest {
                         .content("{\"email\":\"user@test.com\",\"password\":\"password123\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value("jwt-token"));
+    }
+
+    @Test
+    void login_unverifiedAccount_returns403() throws Exception {
+        Account account = new Account();
+        account.setEmail("user@test.com");
+        account.setPassword(passwordEncoder.encode("password123"));
+        account.setVerified(false);
+
+        when(accountRepository.findByEmail("user@test.com")).thenReturn(Optional.of(account));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"user@test.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -178,7 +264,7 @@ class AuthControllerTest {
     @Test
     void claim_unauthenticatedRequest_returns401() throws Exception {
         UsernamePasswordAuthenticationToken unauth =
-                new UsernamePasswordAuthenticationToken("anon", null); // 2-arg ctor = not authenticated
+                new UsernamePasswordAuthenticationToken("anon", null);
 
         mockMvc.perform(post("/api/auth/claim")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -191,7 +277,6 @@ class AuthControllerTest {
 
     @Test
     void me_authenticatedUser_returns200WithAccountInfo() throws Exception {
-        UUID accountId = UUID.randomUUID();
         Account account = new Account();
         account.setEmail("user@test.com");
         account.setCreatedAt(LocalDateTime.of(2024, 1, 1, 0, 0));

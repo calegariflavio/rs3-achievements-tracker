@@ -3,12 +3,13 @@ package com.fullstackapp.rs3tracker.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fullstackapp.rs3tracker.dto.*;
 import com.fullstackapp.rs3tracker.entity.CharacterCache;
+import com.fullstackapp.rs3tracker.entity.XpSnapshot;
 import com.fullstackapp.rs3tracker.exception.ExternalApiException;
 import com.fullstackapp.rs3tracker.repository.CharacterCacheRepository;
+import com.fullstackapp.rs3tracker.repository.XpSnapshotRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.HttpClientErrorException;
@@ -16,6 +17,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +34,9 @@ class PlayerServiceTest {
 
     @Mock
     private CharacterCacheRepository cacheRepository;
+
+    @Mock
+    private XpSnapshotRepository snapshotRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,7 +77,7 @@ class PlayerServiceTest {
 
     @BeforeEach
     void setup() {
-        service = new PlayerService(restTemplate, cacheRepository, objectMapper);
+        service = new PlayerService(restTemplate, cacheRepository, snapshotRepository, objectMapper);
     }
 
     // ── getFullProfile ────────────────────────────────────────────────────────
@@ -456,118 +461,89 @@ class PlayerServiceTest {
     // ── getXpGained ───────────────────────────────────────────────────────────
 
     @Test
-    void getXpGained_withValidResponses_returnsSortedSkills() {
-        // Return valid XP data for all 29 skills
-        String xpJson = """
-                {
-                  "month": [
-                    {"date": 202401, "xp": 1000000},
-                    {"date": 202402, "xp": 2000000}
-                  ]
-                }
-                """;
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn(xpJson);
+    void getXpGained_withNoSnapshots_returnsEmpty() {
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(Collections.emptyList());
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isNotEmpty();
-        // Should be sorted by totalXp descending
-        for (int i = 0; i < result.size() - 1; i++) {
-            assertThat(result.get(i).totalXp()).isGreaterThanOrEqualTo(result.get(i + 1).totalXp());
-        }
+        assertThat(service.getXpGained("Zezima", 30)).isEmpty();
     }
 
     @Test
-    void getXpGained_withNullResponse_filtersOut() {
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn(null);
+    void getXpGained_withOnlyOneDay_returnsEmpty() {
+        // Two snapshots on the same calendar day → 1 distinct date → cannot compute gain
+        LocalDateTime now = LocalDateTime.now();
+        List<XpSnapshot> snaps = List.of(
+                new XpSnapshot("zezima", 0, 10_000_000L, now.minusHours(3)),
+                new XpSnapshot("zezima", 0, 10_500_000L, now.minusHours(1))
+        );
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(snaps);
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isEmpty();
+        assertThat(service.getXpGained("Zezima", 30)).isEmpty();
     }
 
     @Test
-    void getXpGained_withBlankResponse_filtersOut() {
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn("  ");
+    void getXpGained_withTwoDays_returnsGainsSortedDescending() {
+        LocalDateTime day1 = LocalDateTime.now().minusDays(2);
+        LocalDateTime day2 = LocalDateTime.now().minusDays(1);
+        List<XpSnapshot> snaps = List.of(
+                new XpSnapshot("zezima", 0, 10_000_000L, day1),   // Attack: start
+                new XpSnapshot("zezima", 0, 10_500_000L, day2),   // Attack: +500k
+                new XpSnapshot("zezima", 2, 20_000_000L, day1),   // Strength: start
+                new XpSnapshot("zezima", 2, 21_000_000L, day2)    // Strength: +1M
+        );
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(snaps);
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
+        List<SkillXpGained> result = service.getXpGained("Zezima", 30);
 
-        assertThat(result).isEmpty();
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).skillName()).isEqualTo("Strength");
+        assertThat(result.get(0).xpGained()).isEqualTo(1_000_000L);
+        assertThat(result.get(1).skillName()).isEqualTo("Attack");
+        assertThat(result.get(1).xpGained()).isEqualTo(500_000L);
     }
 
     @Test
-    void getXpGained_withErrorJsonResponse_filtersOut() {
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn("{\"error\":\"PROFILE_PRIVATE\"}");
+    void getXpGained_withNoGainInPeriod_excludesSkill() {
+        LocalDateTime day1 = LocalDateTime.now().minusDays(2);
+        LocalDateTime day2 = LocalDateTime.now().minusDays(1);
+        List<XpSnapshot> snaps = List.of(
+                new XpSnapshot("zezima", 0, 10_000_000L, day1),
+                new XpSnapshot("zezima", 0, 10_000_000L, day2) // same XP → 0 gain
+        );
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(snaps);
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isEmpty();
+        assertThat(service.getXpGained("Zezima", 30)).isEmpty();
     }
 
     @Test
-    void getXpGained_withZeroTotalXp_filtersOut() {
-        String xpZero = """
-                {
-                  "month": [
-                    {"date": 202401, "xp": 0}
-                  ]
-                }
-                """;
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn(xpZero);
+    void getXpGained_clampsExcessiveDays() {
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(Collections.emptyList());
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isEmpty();
+        assertThat(service.getXpGained("Zezima", 9999)).isEmpty();
     }
 
     @Test
-    void getXpGained_withMoreThan12Months_keepsLast12() {
-        // Build JSON with 15 months
-        StringBuilder sb = new StringBuilder("{\"month\":[");
-        for (int i = 1; i <= 15; i++) {
-            if (i > 1) sb.append(",");
-            sb.append(String.format("{\"date\":20240%d,\"xp\":100000}", i));
-        }
-        sb.append("]}");
+    void getXpGained_multipleSnapshotsPerDay_usesMaxXpPerDay() {
+        LocalDateTime day1am = LocalDateTime.now().minusDays(1).withHour(8);
+        LocalDateTime day1pm = LocalDateTime.now().minusDays(1).withHour(20);
+        LocalDateTime day2 = LocalDateTime.now();
+        List<XpSnapshot> snaps = List.of(
+                new XpSnapshot("zezima", 0, 10_000_000L, day1am),
+                new XpSnapshot("zezima", 0, 10_800_000L, day1pm), // max for day1
+                new XpSnapshot("zezima", 0, 11_000_000L, day2)
+        );
+        when(snapshotRepository.findByUsernameIgnoreCaseAndRecordedAtAfterOrderBySkillIdAscRecordedAtAsc(
+                anyString(), any())).thenReturn(snaps);
 
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn(sb.toString());
+        List<SkillXpGained> result = service.getXpGained("Zezima", 30);
 
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isNotEmpty();
-        result.forEach(sg -> assertThat(sg.monthly().size()).isLessThanOrEqualTo(12));
-    }
-
-    @Test
-    void getXpGained_withShortDateString_handlesGracefully() {
-        String xpJson = """
-                {
-                  "month": [
-                    {"date": 2024, "xp": 500000}
-                  ]
-                }
-                """;
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenReturn(xpJson);
-
-        // Should not throw
-        service.getXpGained("Zezima");
-    }
-
-    @Test
-    void getXpGained_withException_returnsEmpty() {
-        when(restTemplate.getForObject(contains("xp-monthly"), eq(String.class), anyString(), any()))
-                .thenThrow(new RestClientException("xp API down"));
-
-        List<SkillXpGained> result = service.getXpGained("Zezima");
-
-        assertThat(result).isEmpty();
+        assertThat(result).hasSize(1);
+        // gain = 11M - 10.8M = 200k (uses 10.8M as day1 max, not 10.0M)
+        assertThat(result.get(0).xpGained()).isEqualTo(200_000L);
     }
 
     // ── saveCache edge cases ──────────────────────────────────────────────────

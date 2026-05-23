@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [registered, setRegistered] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -24,12 +25,20 @@ export default function LoginPage() {
     try {
       if (mode === 'register') {
         await apiRegister(email, password)
+        setRegistered(true)
+        return
       }
       await login(email, password)
       navigate('/')
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.message ?? err.message)
+        const status = err.response?.status
+        const msg = err.response?.data?.message ?? err.message
+        if (status === 403) {
+          setError('Your email address has not been verified yet. Please check your inbox.')
+        } else {
+          setError(msg)
+        }
       } else {
         setError('An unexpected error occurred. Please try again.')
       }
@@ -41,6 +50,31 @@ export default function LoginPage() {
   function toggleMode() {
     setMode((m) => (m === 'login' ? 'register' : 'login'))
     setError(null)
+    setRegistered(false)
+  }
+
+  if (registered) {
+    return (
+      <main className="flex-1 bg-stone-950 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm text-center">
+          <div className="text-5xl mb-6">📬</div>
+          <h2 className="text-xl font-bold text-amber-400 mb-3">Check your inbox</h2>
+          <p className="text-stone-400 text-sm mb-2">
+            We sent a verification link to{' '}
+            <span className="text-stone-200 font-medium">{email}</span>.
+          </p>
+          <p className="text-stone-500 text-sm mb-8">
+            Click the link in the email to activate your account, then come back to sign in.
+          </p>
+          <button
+            onClick={toggleMode}
+            className="text-amber-400 hover:text-amber-300 text-sm transition-colors"
+          >
+            Back to sign in
+          </button>
+        </div>
+      </main>
+    )
   }
 
   return (
