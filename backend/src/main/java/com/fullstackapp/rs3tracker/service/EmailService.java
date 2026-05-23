@@ -1,19 +1,25 @@
 package com.fullstackapp.rs3tracker.service;
 
-import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    private static final String RESEND_URL = "https://api.resend.com/emails";
 
-    private final JavaMailSender mailSender;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @Value("${RESEND_API_KEY:}")
+    private String apiKey;
 
     @Value("${app.mail.from}")
     private String fromAddress;
@@ -21,23 +27,30 @@ public class EmailService {
     @Value("${app.url}")
     private String appUrl;
 
-    public EmailService(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
-    }
-
     public void sendVerificationEmail(String to, String token) {
         String verifyUrl = appUrl + "/verify?token=" + token;
+
+        if (apiKey.isBlank()) {
+            log.warn("RESEND_API_KEY not configured — skipping email to {}", to);
+            log.warn("Manual verification URL: {}", verifyUrl);
+            return;
+        }
+
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, "utf-8");
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject("Verify your RS3 Tracker account");
-            helper.setText(buildEmailBody(verifyUrl), true);
-            mailSender.send(message);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiKey);
+
+            Map<String, Object> body = Map.of(
+                    "from",    fromAddress,
+                    "to",      List.of(to),
+                    "subject", "Verify your RS3 Tracker account",
+                    "html",    buildEmailBody(verifyUrl)
+            );
+
+            restTemplate.postForObject(RESEND_URL, new HttpEntity<>(body, headers), String.class);
             log.info("Verification email sent to {}", to);
         } catch (Exception e) {
-            // In dev/test without SMTP configured, log the URL so you can verify manually
             log.warn("Could not send verification email to {}: {}", to, e.getMessage());
             log.warn("Manual verification URL: {}", verifyUrl);
         }
