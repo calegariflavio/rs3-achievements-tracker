@@ -483,10 +483,10 @@ export default function PlayerPage() {
     : activeList
 
   return (
-    <main className="flex-1 bg-stone-950 text-stone-100 px-4 py-8">
+    <main className="flex-1 bg-stone-950 text-stone-100 px-4 py-8 rs3-bg">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Player header */}
-        <div className="bg-stone-900 border border-amber-900/40 rounded-xl p-6 flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+        <div className="relative bg-stone-900 border border-amber-900/40 rounded-xl p-6 flex flex-col sm:flex-row items-center gap-4 sm:gap-6 rs3-panel rs3-corners">
           <img
             src={`http://secure.runescape.com/m=avatar-rs/${encodeURIComponent(player.username)}/chat.png`}
             alt={`${player.username}'s avatar`}
@@ -531,9 +531,10 @@ export default function PlayerPage() {
           <div className="space-y-8">
             {skills.length > 0 && (
               <section>
-                <h2 className="text-xl font-semibold text-amber-400 mb-4 pb-2 border-b border-stone-700">
-                  Skills
-                </h2>
+                <div className="flex items-center gap-3 mb-4 pb-2 border-b border-stone-700">
+                  <h2 className="text-xl font-semibold text-amber-400">Skills</h2>
+                  <span className="text-amber-900/70 text-xs select-none">✦━━━</span>
+                </div>
                 <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2">
                   {sortedSkills.map((skill) => {
                     const name = SKILL_ID_MAP[skill.id]
@@ -574,9 +575,10 @@ export default function PlayerPage() {
 
             {activities.length > 0 && (
               <section>
-                <h2 className="text-xl font-semibold text-amber-400 mb-4 pb-2 border-b border-stone-700">
-                  Recent Activity
-                </h2>
+                <div className="flex items-center gap-3 mb-4 pb-2 border-b border-stone-700">
+                  <h2 className="text-xl font-semibold text-amber-400">Recent Activity</h2>
+                  <span className="text-amber-900/70 text-xs select-none">✦━━━</span>
+                </div>
                 <div className="space-y-2">
                   {activities.map((activity, idx) => (
                     <div
@@ -599,7 +601,10 @@ export default function PlayerPage() {
         {pageTab === 'xp-gained' && (
           <section>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 pb-3 border-b border-stone-700">
-              <h2 className="text-xl font-semibold text-amber-400 flex-1">XP Gained</h2>
+              <div className="flex items-center gap-3 flex-1">
+                <h2 className="text-xl font-semibold text-amber-400">XP Gained</h2>
+                <span className="text-amber-900/70 text-xs select-none">✦━━━</span>
+              </div>
               {/* Period filter */}
               <div className="flex gap-1">
                 {([7, 30, 90, 365] as const).map((d) => (
