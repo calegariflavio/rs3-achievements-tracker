@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
+import { QUEST_REQUIREMENTS } from '../data/questRequirements'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api/axiosConfig'
 import { useRecentCharacters } from '../hooks/useRecentCharacters'
@@ -198,36 +199,123 @@ const QUEST_STATUS_CONFIG = {
   NOT_STARTED: { icon: '○', cls: 'text-stone-500' },
 } as const
 
-function QuestRow({ quest }: { quest: Quest }) {
+function QuestRow({
+  quest,
+  skillMap,
+  completedQuestSet,
+  totalQP,
+  expanded,
+  onToggle,
+}: {
+  quest: Quest
+  skillMap: Record<string, number>
+  completedQuestSet: Set<string>
+  totalQP: number
+  expanded: boolean
+  onToggle: () => void
+}) {
   const status = QUEST_STATUS_CONFIG[quest.status]
   const difficulty = quest.difficulty !== undefined ? DIFFICULTY_CONFIG[quest.difficulty] : undefined
   const wikiUrl = `https://runescape.wiki/w/${quest.title.replace(/ /g, '_')}`
+  // Normalize: curly apostrophes → straight; strip wiki "(quest)" disambiguation suffix
+  const normalizedTitle = quest.title
+    .replace(/[‘’‚‛′‵]/g, "’")
+    .replace(/\s*\(quest\)\s*$/i, ‘’)
+  const reqs = QUEST_REQUIREMENTS[normalizedTitle]
+
+  const hasSkills = (reqs?.skills?.length ?? 0) > 0
+  const hasQuests = (reqs?.quests?.length ?? 0) > 0
+  const hasQP = reqs?.questPoints != null
 
   return (
-    <div className="bg-stone-900 border border-stone-700 rounded-lg px-4 py-2.5 flex items-center gap-3">
-      <span className={`text-xs shrink-0 w-3 text-center ${status.cls}`}>{status.icon}</span>
-      <span className="text-stone-200 text-sm flex-1 min-w-0 truncate">{quest.title}</span>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {quest.questPoints != null && quest.questPoints > 0 && (
-          <span className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700/50 px-1.5 py-0.5 rounded">
-            ⭐ {quest.questPoints}
+    <div className="bg-stone-900 border border-stone-700 rounded-lg overflow-hidden">
+      <button
+        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-stone-800/40 transition-colors text-left"
+        onClick={onToggle}
+      >
+        <span className={`text-xs shrink-0 w-3 text-center ${status.cls}`}>{status.icon}</span>
+        <span className="text-stone-200 text-sm flex-1 min-w-0 truncate">{quest.title}</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {quest.questPoints != null && quest.questPoints > 0 && (
+            <span className="text-xs bg-amber-900/50 text-amber-300 border border-amber-700/50 px-1.5 py-0.5 rounded">
+              ⭐ {quest.questPoints}
+            </span>
+          )}
+          {difficulty && (
+            <span className={`text-xs px-1.5 py-0.5 rounded ${difficulty.cls}`}>
+              {difficulty.label}
+            </span>
+          )}
+          <a
+            href={wikiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-stone-500 hover:text-amber-400 transition-colors text-sm leading-none"
+            title={`Open wiki: ${quest.title}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            🔗
+          </a>
+          <span className={`text-stone-500 text-xs transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`} aria-hidden>
+            ▼
           </span>
-        )}
-        {difficulty && (
-          <span className={`text-xs px-1.5 py-0.5 rounded ${difficulty.cls}`}>
-            {difficulty.label}
-          </span>
-        )}
-        <a
-          href={wikiUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-stone-500 hover:text-amber-400 transition-colors text-sm leading-none"
-          title={`Open wiki: ${quest.title}`}
-        >
-          🔗
-        </a>
-      </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3 pt-2 border-t border-stone-700/50">
+          {reqs === undefined ? (
+            <p className="text-xs text-stone-500 italic">
+              Requirement data not available.{' '}
+              <a
+                href={wikiUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-amber-500 hover:text-amber-400 not-italic"
+              >
+                View on wiki ↗
+              </a>
+            </p>
+          ) : !hasQP && !hasSkills && !hasQuests ? (
+            <p className="text-xs text-stone-500">No skill or quest requirements.</p>
+          ) : (
+            <div className="space-y-1.5 mt-0.5">
+              {hasQP && reqs.questPoints != null && (
+                <div className={`flex items-center gap-2 text-xs ${totalQP >= reqs.questPoints ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className="w-4 text-center shrink-0">⭐</span>
+                  <span>{reqs.questPoints} Quest Points</span>
+                  <span className="text-stone-500 ml-auto">{totalQP} / {reqs.questPoints}</span>
+                </div>
+              )}
+
+              {reqs.skills?.map((req) => {
+                const playerLevel = skillMap[req.skill] ?? 1
+                const met = playerLevel >= req.level
+                return (
+                  <div key={req.skill} className={`flex items-center gap-2 text-xs ${met ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className="w-4 text-center shrink-0 text-sm leading-none" aria-hidden>
+                      {SKILL_EMOJI_MAP[req.skill] ?? '📊'}
+                    </span>
+                    <span>{req.skill}</span>
+                    <span className="font-medium">{req.level}</span>
+                    <span className="text-stone-500 ml-auto">{playerLevel} / {req.level}</span>
+                  </div>
+                )
+              })}
+
+              {reqs.quests?.map((prereqTitle) => {
+                const done = completedQuestSet.has(prereqTitle)
+                return (
+                  <div key={prereqTitle} className={`flex items-center gap-2 text-xs ${done ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className="w-4 text-center shrink-0">{done ? '✓' : '○'}</span>
+                    <span>{prereqTitle}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -248,6 +336,7 @@ export default function PlayerPage() {
   const [xpError, setXpError] = useState<string | null>(null)
   const [xpDays, setXpDays] = useState(30)
   const [xpSkillFilter, setXpSkillFilter] = useState('')
+  const [expandedQuests, setExpandedQuests] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     document.title = username ? `${username} | RS3 Tracker` : 'RS3 Tracker'
@@ -325,6 +414,24 @@ export default function PlayerPage() {
   const activities = player.recentActivity ?? []
   const quests = player.quests ?? []
   const completed = quests.filter((q) => q.status === 'COMPLETED')
+
+  const skillMap: Record<string, number> = {}
+  skills.forEach((s) => {
+    const name = SKILL_ID_MAP[s.id]
+    if (name) skillMap[name] = s.level
+  })
+
+  const completedQuestSet = new Set(completed.map((q) => q.title))
+  const totalQP = completed.reduce((sum, q) => sum + (q.questPoints ?? 0), 0)
+
+  function toggleQuest(title: string) {
+    setExpandedQuests((prev) => {
+      const next = new Set(prev)
+      if (next.has(title)) next.delete(title)
+      else next.add(title)
+      return next
+    })
+  }
   const started = quests.filter((q) => q.status === 'STARTED')
   const notStarted = quests.filter((q) => q.status === 'NOT_STARTED')
 
@@ -605,7 +712,15 @@ export default function PlayerPage() {
                 {visibleQuests.length > 0 ? (
                   <div className="space-y-1">
                     {visibleQuests.map((quest) => (
-                      <QuestRow key={quest.title} quest={quest} />
+                      <QuestRow
+                        key={quest.title}
+                        quest={quest}
+                        skillMap={skillMap}
+                        completedQuestSet={completedQuestSet}
+                        totalQP={totalQP}
+                        expanded={expandedQuests.has(quest.title)}
+                        onToggle={() => toggleQuest(quest.title)}
+                      />
                     ))}
                   </div>
                 ) : (
