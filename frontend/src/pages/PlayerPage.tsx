@@ -217,10 +217,10 @@ function QuestRow({
   const status = QUEST_STATUS_CONFIG[quest.status]
   const difficulty = quest.difficulty !== undefined ? DIFFICULTY_CONFIG[quest.difficulty] : undefined
   const wikiUrl = `https://runescape.wiki/w/${quest.title.replace(/ /g, '_')}`
-  // Normalize: curly apostrophes → straight; strip wiki "(quest)" disambiguation suffix
+    .replace(/ [(]quest[)]$/i, "")
   const normalizedTitle = quest.title
     .replace(/[‘’‚‛′‵]/g, "’")
-    .replace(/\s*\(quest\)\s*$/i, ‘’)
+    .replace(/ [(]quest[)]$/i, "")
   const reqs = QUEST_REQUIREMENTS[normalizedTitle]
 
   const hasSkills = (reqs?.skills?.length ?? 0) > 0
