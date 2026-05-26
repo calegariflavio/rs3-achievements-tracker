@@ -279,7 +279,7 @@ function QuestRow({
           ) : !hasQP && !hasSkills && !hasQuests ? (
             <p className="text-xs text-stone-500">No skill or quest requirements.</p>
           ) : (
-            <div className="space-y-1.5 mt-0.5">
+            <div className="mt-0.5 space-y-2">
               {hasQP && reqs.questPoints != null && (
                 <div className={`flex items-center gap-2 text-xs ${totalQP >= reqs.questPoints ? 'text-green-400' : 'text-red-400'}`}>
                   <span className="w-4 text-center shrink-0">⭐</span>
@@ -288,30 +288,61 @@ function QuestRow({
                 </div>
               )}
 
-              {reqs.skills?.map((req) => {
-                const playerLevel = skillMap[req.skill] ?? 1
-                const met = playerLevel >= req.level
+              {(hasSkills || hasQuests) && (() => {
+                const sortedSkills = [...(reqs.skills ?? [])].sort((a, b) => {
+                  const aM = (skillMap[a.skill] ?? 1) >= a.level
+                  const bM = (skillMap[b.skill] ?? 1) >= b.level
+                  return aM === bM ? 0 : aM ? -1 : 1
+                })
+                const sortedQuests = [...(reqs.quests ?? [])].sort((a, b) => {
+                  const aD = completedQuestSet.has(a)
+                  const bD = completedQuestSet.has(b)
+                  return aD === bD ? 0 : aD ? -1 : 1
+                })
                 return (
-                  <div key={req.skill} className={`flex items-center gap-2 text-xs ${met ? 'text-green-400' : 'text-red-400'}`}>
-                    <span className="w-4 text-center shrink-0 text-sm leading-none" aria-hidden>
-                      {SKILL_EMOJI_MAP[req.skill] ?? '📊'}
-                    </span>
-                    <span>{req.skill}</span>
-                    <span className="font-medium">{req.level}</span>
-                    <span className="text-stone-500 ml-auto">{playerLevel} / {req.level}</span>
+                  <div className="flex gap-4">
+                    {hasSkills && (
+                      <div className="flex-1 space-y-1 min-w-0">
+                        {sortedSkills.map((req) => {
+                          const playerLevel = skillMap[req.skill] ?? 1
+                          const met = playerLevel >= req.level
+                          return (
+                            <div key={req.skill} className={`flex items-center gap-1.5 text-xs ${met ? 'text-green-400' : 'text-red-400'}`}>
+                              <span className="shrink-0 text-sm leading-none" aria-hidden>
+                                {SKILL_EMOJI_MAP[req.skill] ?? '📊'}
+                              </span>
+                              <span className="truncate">{req.skill} {req.level}</span>
+                              <span className="text-stone-500 ml-auto shrink-0">{playerLevel}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {hasSkills && hasQuests && <div className="w-px bg-stone-700/60 shrink-0" />}
+                    {hasQuests && (
+                      <div className="flex-1 space-y-1 min-w-0">
+                        {sortedQuests.map((prereqTitle) => {
+                          const done = completedQuestSet.has(prereqTitle)
+                          const prereqWiki = `https://runescape.wiki/w/${prereqTitle.replace(/ /g, '_')}`
+                          return (
+                            <div key={prereqTitle} className={`flex items-center gap-1.5 text-xs ${done ? 'text-green-400' : 'text-red-400'}`}>
+                              <span className="shrink-0">{done ? '✓' : '○'}</span>
+                              <span className="truncate" title={prereqTitle}>{prereqTitle}</span>
+                              <a
+                                href={prereqWiki}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 text-stone-500 hover:text-amber-400 transition-colors leading-none ml-auto"
+                                onClick={(e) => e.stopPropagation()}
+                              >🔗</a>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )
-              })}
-
-              {reqs.quests?.map((prereqTitle) => {
-                const done = completedQuestSet.has(prereqTitle)
-                return (
-                  <div key={prereqTitle} className={`flex items-center gap-2 text-xs ${done ? 'text-green-400' : 'text-red-400'}`}>
-                    <span className="w-4 text-center shrink-0">{done ? '✓' : '○'}</span>
-                    <span>{prereqTitle}</span>
-                  </div>
-                )
-              })}
+              })()}
             </div>
           )}
         </div>
