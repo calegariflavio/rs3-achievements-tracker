@@ -20,13 +20,15 @@ export default function Navbar() {
 
   return (
     <nav className="bg-stone-950 border-b border-amber-900/40 shadow-lg shadow-black/50 relative z-50">
+      {/* Amber accent line at top of nav */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-700/50 to-transparent" />
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
         <NavLink
           to="/"
           onClick={() => setMobileOpen(false)}
           className="flex items-center gap-2 group shrink-0"
         >
-          <span className="text-amber-500 text-xl leading-none">⚔</span>
+          <span className="text-amber-500 text-xl leading-none drop-shadow-[0_0_6px_rgba(217,119,6,0.6)]">⚔</span>
           <span className="text-amber-400 font-bold text-base tracking-wide group-hover:text-amber-300 transition-colors">
             RS3 Tracker
           </span>
@@ -34,7 +36,7 @@ export default function Navbar() {
 
         <div className="hidden md:flex items-center gap-1">
           <NavLink to="/" end className={linkClass}>Home</NavLink>
-          <NavLink to="/archaeology" className={linkClass}>Archaeology Log</NavLink>
+          <NavLink to="/archaeology" className={linkClass}>🏺 Archaeology Log</NavLink>
         </div>
 
         <button
@@ -56,7 +58,7 @@ export default function Navbar() {
             className={mobileLinkClass}
             onClick={() => setMobileOpen(false)}
           >
-            Archaeology Log
+            🏺 Archaeology Log
           </NavLink>
         </div>
       )}

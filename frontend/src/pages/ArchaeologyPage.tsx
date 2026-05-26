@@ -104,17 +104,22 @@ export default function ArchaeologyPage() {
     'w-full md:w-auto bg-stone-800 border border-stone-600 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 rounded-lg px-3 py-2.5 text-stone-300 text-sm outline-none transition-all appearance-none min-h-[44px]'
 
   return (
-    <main className="flex-1 bg-stone-950 text-stone-100 px-4 py-8">
+    <main className="flex-1 bg-stone-950 text-stone-100 px-4 py-8 rs3-bg">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-amber-700/60 text-sm select-none">✦━━</span>
+              <span className="text-amber-500 text-2xl drop-shadow-[0_0_8px_rgba(217,119,6,0.5)]">🏺</span>
+              <span className="text-amber-700/60 text-sm select-none">━━✦</span>
+            </div>
             <h1 className="text-3xl font-bold text-amber-400 mb-1">Archaeology Collection Log</h1>
             <p className="text-stone-400 text-sm">
               Track artefacts collected from all RS3 collectors. Progress is saved in your browser.
             </p>
           </div>
-          <div className="bg-stone-900 border border-amber-900/40 rounded-xl px-5 py-3 text-right shrink-0">
+          <div className="relative bg-stone-900 border border-amber-900/40 rounded-xl px-5 py-3 text-right shrink-0 rs3-panel rs3-corners">
             <p className="text-stone-500 text-xs mb-0.5">Collected</p>
             <p className="text-amber-400 font-semibold text-lg">
               {collected.size}{' '}
@@ -186,6 +191,11 @@ export default function ArchaeologyPage() {
         </div>
 
         {/* Collector groups */}
+        <div className="flex items-center gap-3">
+          <span className="text-amber-900/70 text-xs select-none">✦━━━━━</span>
+          <span className="text-stone-500 text-xs uppercase tracking-widest">Collectors</span>
+          <span className="flex-1 h-px bg-gradient-to-r from-amber-900/30 to-transparent" />
+        </div>
         {filteredGroups.map((group) => {
           const groupTotal = group.collections.reduce((s, col) => s + col.artefacts.length, 0)
           const groupCollected = group.collections.reduce(
@@ -238,7 +248,7 @@ export default function ArchaeologyPage() {
                   return (
                     <div
                       key={collection.name}
-                      className="bg-stone-900 border border-stone-700 rounded-xl p-4"
+                      className="bg-stone-900 border border-stone-700 rounded-xl p-4 rs3-panel"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
